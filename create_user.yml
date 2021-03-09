@@ -1,0 +1,46 @@
+## USAGE: ansible-playbook create_user.yml -e "target_host='HOST' usrnme='USERNAME' usrpasswd='PASSWORD'"
+---
+- name: Create user
+  hosts: "{{target_host}}"
+  gather_facts: yes
+  vars:
+    grp: >
+      {% if ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'  %}
+      sudo
+      {% elif ansible_distribution == 'CentOS' or ansible_distribution == 'OracleLinux' %}
+      wheel
+      {% else %}
+      none
+      {% endif %}
+  tasks:
+
+  - name: Get users database
+    getent:
+      database: passwd
+
+#  - name: Detect OS
+#    vars: 
+#      grp: >
+#        {% if ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'  %}
+#        sudo
+#        {% elif ansible_distribution == 'CentOS' or ansible_distribution == 'OracleLinux' %}
+#        wheel
+#        {% else %}
+#        none
+#        {% endif %}
+#    debug: 
+#      msg:
+#        - "Detected OS at {{inventory_hostname}} is {{ ansible_distribution }}"
+#        - "User group will be{{grp}}"
+
+  - name: Add user
+    user:
+      name: "{{usrnme}}"
+      password: "{{ usrpasswd | password_hash('sha512') }}"
+      shell: /bin/bash
+      groups: "{{grp}}"
+      update_password: on_create
+    register: usrnme
+    with_items: "{{usrnme}}"
+    when: usrnme not in ansible_facts.getent_passwd
+

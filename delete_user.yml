@@ -1,0 +1,20 @@
+## USAGE: ansible-playbook delete_user.yml -e "target_host='HOST' usrnme='USERNAME'"
+---
+- name: Create user
+  hosts: "{{target_host}}"
+  gather_facts: yes
+  tasks:
+
+  - name: Get users database
+    getent:
+      database: passwd
+
+  - name: Remove user
+    user:
+      name: "{{usrnme}}"
+      state: absent
+      remove: yes
+    register: usrnme
+    with_items: "{{usrnme}}"
+    when: usrnme in ansible_facts.getent_passwd and usrnme != 'root'
+

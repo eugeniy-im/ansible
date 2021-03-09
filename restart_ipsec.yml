@@ -1,0 +1,25 @@
+## USEAGE: ansible-playbook /etc/ansible/playbook/restart_ipsec.yml -e "target_host=IPSEC-HOST"'
+---
+- name: Restart IPSEC for {{target_host}}
+  hosts: "{{target_host}}"
+  #command_warnings: False
+  tasks:
+
+  - name: Проверяем доступность хоста Zentyal {{target_host}} по сети.
+    action: ping
+    register: ping_result
+    when: target_host is defined
+
+  - name: Проверяем статус службы Zentyal IPSEC на {{target_host}}
+    shell: service zentyal ipsec status
+    register: s_status
+    when: ping_result is succeeded
+
+  - name: Если служба Zentyal IPSEC на {{target_host}} запущена - перезапускаем
+    shell: service zentyal ipsec stop && service zentyal ipsec start
+    when: "'RUNNING' in s_status.stdout"
+
+  - name: Если служба Zentyal IPSEC {{target_host}} не запущена - пытаемся запустить
+    shell: service zentyal ipsec start
+    when: "'RUNNING' not in s_status.stdout"
+    
