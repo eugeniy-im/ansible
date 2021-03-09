@@ -14,7 +14,7 @@
       name: "{{usrnme}}"
       state: absent
       remove: yes
-    register: usrnme
+    #register: usrnme
     with_items: "{{usrnme}}"
     when: usrnme in ansible_facts.getent_passwd and usrnme != 'root'
 
