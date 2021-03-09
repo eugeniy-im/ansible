@@ -18,21 +18,6 @@
     getent:
       database: passwd
 
-#  - name: Detect OS
-#    vars: 
-#      grp: >
-#        {% if ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'  %}
-#        sudo
-#        {% elif ansible_distribution == 'CentOS' or ansible_distribution == 'OracleLinux' %}
-#        wheel
-#        {% else %}
-#        none
-#        {% endif %}
-#    debug: 
-#      msg:
-#        - "Detected OS at {{inventory_hostname}} is {{ ansible_distribution }}"
-#        - "User group will be{{grp}}"
-
   - name: Add user
     user:
       name: "{{usrnme}}"
@@ -42,5 +27,5 @@
       update_password: on_create
     register: usrnme
     with_items: "{{usrnme}}"
-    when: usrnme not in ansible_facts.getent_passwd
+    when: usrnme not in ansible_facts.getent_passwd and "{{grp}}" != "none"
 
