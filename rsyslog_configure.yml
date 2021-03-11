@@ -1,4 +1,4 @@
-#USAGE: ansible-playbook rsyslog_configure.yml -e "target_host='HOST'" <---dont use it on Zentyal
+#USAGE: ansible-playbook rsyslog_configure.yml -e "target_host='HOST'"
 ---
 - name: Configuring rsyslog send logs to graylog.
   hosts: "{{target_host}}"
