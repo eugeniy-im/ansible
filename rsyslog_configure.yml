@@ -1,0 +1,73 @@
+#USAGE: ansible-playbook rsyslog_configure.yml -e "target_host='HOST'" <---dont use it on Zentyal
+---
+- name: Configuring rsyslog send logs to graylog.
+  hosts: "{{target_host}}"
+  gather_facts: yes
+  tasks:
+  - name: Collect facts about system services
+    service_facts:
+    register: services_state
+
+  - name: Stopping rsyslog [Debian]
+    service:
+      name: rsyslog
+      state: stopped
+    when: ansible_facts.services['rsyslog'] is defined
+
+  - name: Stopping rsyslog [RedHat]
+    service:
+      name: rsyslog.service
+      state: stopped
+    when: ansible_facts.services['rsyslog.service'] is defined
+
+  - name: Copy additional rsyslog config file
+    copy:
+      src: /etc/ansible/playbook/files/rsyslog/51-graylog.conf
+      dest: /etc/rsyslog.d/
+    when: ansible_facts.services['rsyslog.service'] is defined or ansible_facts.services['rsyslog'] is defined
+
+  - name: Checking /etc/rsyslog.conf.original
+    stat:
+      path: /etc/rsyslog.conf.original
+    register: rfile
+
+  - name: Copying original rsyslog.conf file
+    shell: "cp /etc/rsyslog.conf /etc/rsyslog.conf.original"
+    when: not rfile.stat.exists
+
+  - name: Add ansible inventory hostname to rsyslog.conf
+    shell: "echo '$LocalHostName {{item}}'|sed -i '1e cat /dev/stdin' /etc/rsyslog.conf"
+    with_items: "{{inventory_hostname}}"
+    when: not rfile.stat.exists
+
+  - name: Checking /etc/hosts.original
+    stat:
+      path: /etc/hosts.original
+    register: hfile
+
+  - name: Copying original hosts file
+    shell: "cp /etc/hosts /etc/hosts.original"
+    when: not hfile.stat.exists
+
+  - name: Add ansible inventory hostname to hosts
+    shell: "echo '127.0.0.1    {{item}}'|sed -i '1e cat /dev/stdin' /etc/hosts"
+    with_items: "{{inventory_hostname}}"
+    when: not hfile.stat.exists
+
+#  - name: Setting up hostname ---- Not sure about this.
+#    hostname:
+#      name: "{{inventory_hostname}}"
+
+  - name: Starting rsyslog [Debian]
+    service:
+      name: rsyslog
+      state: started
+    when: ansible_facts.services['rsyslog'] is defined
+
+  - name: Starting rsyslog [RedHat]
+    service:
+      name: rsyslog.service
+      state: started
+    when: ansible_facts.services['rsyslog.service'] is defined
+
+
