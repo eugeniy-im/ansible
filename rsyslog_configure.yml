@@ -1,4 +1,4 @@
-#USAGE: ansible-playbook rsyslog_configure.yml -e "target_host='HOST'"
+#USAGE: ansible-playbook rsyslog_configure.yml -e "target_host='HOST'" <--Not tested on zentyal distrib.
 ---
 - name: Configuring rsyslog send logs to graylog.
   hosts: "{{target_host}}"
@@ -8,13 +8,13 @@
     service_facts:
     register: services_state
 
-  - name: Stopping rsyslog [Debian]
+  - name: Stopping rsyslog [SysVinit]
     service:
       name: rsyslog
       state: stopped
     when: ansible_facts.services['rsyslog'] is defined
 
-  - name: Stopping rsyslog [RedHat]
+  - name: Stopping rsyslog [systemd]
     service:
       name: rsyslog.service
       state: stopped
@@ -58,13 +58,13 @@
 #    hostname:
 #      name: "{{inventory_hostname}}"
 
-  - name: Starting rsyslog [Debian]
+  - name: Starting rsyslog [sysVinit]
     service:
       name: rsyslog
       state: started
     when: ansible_facts.services['rsyslog'] is defined
 
-  - name: Starting rsyslog [RedHat]
+  - name: Starting rsyslog [systemd]
     service:
       name: rsyslog.service
       state: started
