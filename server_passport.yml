@@ -1,0 +1,259 @@
+## USAGE: ansible-playbook server_passport.yml -e "target_hosts='HOST'"
+---
+- name: Local tasks
+  hosts: localhost
+  gather_facts: no
+  tasks:
+
+    - name: Creating local passport folder
+      file:
+        path: ./passports
+        state: directory
+
+- name: Remote tasks
+  hosts: "{{target_hosts}}"
+  gather_facts: yes
+  vars:
+    passport_filename: "./passports/{{ inventory_hostname }}.{{ ansible_date_time.date }}.txt"
+# Это больше не нужно
+#    packet_manager: >
+#      {% if ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian' %}
+#      apt
+#      {% elif ansible_distribution == 'CentOS' or ansible_distribution == 'OracleLinux' or ansible_distribution == 'RedHat' %}
+#      yum
+#      {% else %}
+#      none
+#      {% endif %}
+  ignore_errors: yes
+  tasks:
+
+    - name: Delete old passport files
+      file:
+        path: "{{passport_filename}}"
+        state: absent
+      delegate_to: localhost
+
+    - name: Create passport files
+      file:
+        path: "{{passport_filename}}"
+        state: touch
+      delegate_to: localhost
+
+    - name: Write passport header
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - '-----Section 0: Header----------'
+        - 'Passport file for server:"{{ ansible_hostname }}" FQDN:"{{ansible_fqdn}}", ansible inventory name:"{{inventory_hostname}}" created at {{ ansible_date_time.date }} {{ansible_date_time.time}}'
+        - 'Operating System:"{{ansible_distribution}} {{ansible_distribution_version}} {{ansible_machine}}" Kernel version:"{{ansible_kernel}}"'
+        - ''
+        - '-----Section 1: Users----------'
+      delegate_to: localhost
+
+    - name: Connecting to users database
+      getent:
+        database: passwd
+
+    - name: Write usernames and shells
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "Username:'{{ item.key }}' Shell:'{{ item.value.5 }}'"
+      loop: "{{ getent_passwd|dict2items}}"
+      delegate_to: localhost
+
+    - name: Write system data header
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - " "
+        - "-----Section 2: System information----------"
+        - "Memory:'{{ansible_memory_mb.real.total}}mb'"
+        - "CPU Model:'{{ansible_processor[2]}}' Socket count:{{ansible_processor_cores}} Threads per core:{{ansible_processor_threads_per_core}}"
+        - '  '
+        - "-----Section 3: Storage configuration----------"
+        - "Storage devices:"
+      delegate_to: localhost
+
+    - name: Write block devices data
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "Device {{item.key}}: \n {{item.value|to_nice_yaml}}"
+      with_dict: "{{ ansible_devices }}"
+      delegate_to: localhost
+
+    - name: Write mount point header
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "Mounted filesystems:"
+      delegate_to: localhost
+
+    - name: Write mount points data
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "Device:'{{item.device}}' Mount point:'{{item.mount}}' Filesystem:'{{item.fstype}}' Mount options:'{{item.options}}' Total size:'{{ item.size_total }}' UUID:'{{item.uuid}}'"
+      with_items: "{{ ansible_mounts }}"
+      delegate_to: localhost
+
+    - name: Write network config
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - '   '
+        - '-----Section 4: Network configuration----------'
+        - 'Default network interface:'
+        - '{{ansible_default_ipv4|to_nice_yaml}}'
+        - 'All configured ipv4 addresses:"{{ansible_all_ipv4_addresses}}" All configured ipv6 addresses:"{{ansible_all_ipv6_addresses}}"'
+        - 'All network interfaces information:'
+      delegate_to: localhost
+
+#   Метод по умолчанию, но может сломаться от экзотических настроек.
+    - name: Get interface information
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{ansible_interfaces |  map('regex_replace','^','ansible_') |  map('extract',hostvars[inventory_hostname]) |  selectattr('ipv4') | list | to_nice_yaml }}"
+      delegate_to: localhost
+      register: ifresult
+
+#    - name: Debug
+#      debug:
+#        msg: '{{ifresult}}'
+
+
+#   Обходной метод собирает только имена интерфейсов
+    - name: Write other network configuration headers
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - 'Active network interfaces: {{ansible_interfaces|list}}'
+      delegate_to: localhost
+      when: ifresult is not defined or "failed" in ifresult or "exception" in ifresult
+
+    - name: Write opened network posts header
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "Opened network potrts:"
+      delegate_to: localhost
+
+    - name: Shell command to get opened ports
+      shell:
+        cmd: netstat -tunlp
+      become: yes
+      register: nsout
+
+    - name: Write netstat out
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items: "{{nsout.stdout}}"
+      delegate_to: localhost
+
+    - name: Write software header
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "       "
+        - "-----Section 5: Software information----------"
+        - "Registered services:"
+        - "#######"
+      delegate_to: localhost
+
+    - name: Get services
+      ansible.builtin.service_facts:
+
+#   На случай сложных выборок или фильтров.
+#    - name: Write services
+#      lineinfile:
+#        path: "{{passport_filename}}"
+#        line: "{{item.value|to_nice_yaml}}"
+#      with_dict: "{{ ansible_facts.services }}"
+#      delegate_to: localhost
+
+#   Это не работает на некоторых убунтах, баг ансибла.
+    - name: Write services
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{ ansible_facts.services|to_nice_yaml }}"
+      delegate_to: localhost
+
+    - name: Write package list header
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "########"
+        - "        "
+        - "List of installed packages:"
+      delegate_to: localhost
+
+    - name: Get packages
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Write packages
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{ansible_facts.packages|list}}"
+      delegate_to: localhost
+
+    - name: Last section header
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "         "
+        - "----------Section 6: Other----------"
+        - "Checksums of sensitive directories:"
+      delegate_to: localhost
+
+    - name: Calculating directories sha1sums
+      shell:
+        cmd: find "{{item}}" -xtype f -print0 | xargs -0 sha1sum | cut -b-40 | sort | sha1sum
+      with_items:
+        - /etc/
+        - /bin/
+        - /sbin/
+        - /usr/bin/
+        - /usr/sbin/
+        - /boot/
+      register: dirsums
+      become: yes
+
+    - name: Write directories info
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "Directory: '{{item.0}}' SHA1SUM: {{item.1.stdout}}"
+      with_together: 
+        - [ '/etc/','/bin/','/sbin/','/usr/bin/','/usr/sbin/','/boot/' ]
+        - "{{dirsums.results}}"
+      delegate_to: localhost
+
+    - name: Read selinux config
+      shell:
+        cmd: cat /etc/sysconfig/selinux| grep '^SELINUX='
+      become: yes
+      register: selinux_status
+
+    - name: Write selinux policy
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "          "
+        - "SELINUX Policy: {{selinux_status.stdout}}"
+      delegate_to: localhost
+      when: selinux_status is defined
+
+
+    - name: Write EOF
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "----------End Of Passport----------"
+      delegate_to: localhost
+
