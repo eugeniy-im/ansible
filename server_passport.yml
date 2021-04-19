@@ -101,7 +101,7 @@
         - 'All network interfaces information:'
       delegate_to: localhost
 
-#   Метод по умолчанию, но может сломаться от экзотических настроек.
+#   Метод по умолчанию, дает много информации, но может сломаться от экзотических настроек, например от интерфейсов докера.
     - name: Get interface information
       lineinfile:
         path: "{{passport_filename}}"
@@ -109,7 +109,7 @@
       delegate_to: localhost
       register: ifresult
 
-#   Обходной метод собирает только имена интерфейсов
+#   Обходной метод собирает только имена интерфейсов, запускается только если основной не прошел.
     - name: Write other network configuration headers
       lineinfile:
         path: "{{passport_filename}}"
