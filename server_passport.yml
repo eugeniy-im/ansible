@@ -1,5 +1,5 @@
 ## USAGE: ansible-playbook server_passport.yml -e "target_hosts='HOST'"
-## Tested at ansible 2.9.6
+## Tested in ansible 2.9.6
 ---
 - name: Local tasks
   hosts: localhost
@@ -109,11 +109,6 @@
       delegate_to: localhost
       register: ifresult
 
-#    - name: Debug
-#      debug:
-#        msg: '{{ifresult}}'
-
-
 #   Обходной метод собирает только имена интерфейсов
     - name: Write other network configuration headers
       lineinfile:
@@ -154,18 +149,11 @@
         - "#######"
       delegate_to: localhost
 
+#   Это не работает на некоторых убунтах. Баг service_facts.
     - name: Get services
       ansible.builtin.service_facts:
 
-#   На случай сложных выборок или фильтров.
-#    - name: Write services
-#      lineinfile:
-#        path: "{{passport_filename}}"
-#        line: "{{item.value|to_nice_yaml}}"
-#      with_dict: "{{ ansible_facts.services }}"
-#      delegate_to: localhost
-
-#   Это не работает на некоторых убунтах, баг ансибла.
+#   Если Get services не сработало, этот плей тоже пропустит с ошибкой.
     - name: Write services
       lineinfile:
         path: "{{passport_filename}}"
