@@ -1,4 +1,5 @@
 ## USAGE: ansible-playbook server_passport.yml -e "target_hosts='HOST'"
+## Tested at ansible 2.9.6
 ---
 - name: Local tasks
   hosts: localhost
