@@ -1,5 +1,7 @@
 ## USAGE: ansible-playbook server_passport.yml -e "target_hosts='HOST'"
 ## Tested in ansible 2.9.6
+## Version '21.04.2021'
+## Author 'eugeniy-im'
 ---
 - name: Local tasks
   hosts: localhost
@@ -14,11 +16,23 @@
 - name: Remote tasks
   hosts: "{{target_hosts}}"
   gather_facts: yes
+  become: yes
   vars:
     passport_filename: "./passports/{{ inventory_hostname }}.{{ ansible_date_time.date }}.txt"
   ignore_errors: yes
   tasks:
 
+#   Это не работает на некоторых убунтах. Баг service_facts.
+    - name: Get service facts (Bugged at Ubuntu)
+      service_facts:
+      register: srvfacts
+      when: ansible_distribution|lower != 'ubuntu'
+
+#    - name: debug this fuck
+#      debug:
+#        msg: "{{srvfacts}}"
+
+##----Begin of preparing files block
     - name: Delete old passport files
       file:
         path: "{{passport_filename}}"
@@ -43,6 +57,7 @@
         - '-----Section 1: Users----------'
       delegate_to: localhost
 
+##----Begin users block
     - name: Connecting to users database
       getent:
         database: passwd
@@ -54,6 +69,7 @@
       loop: "{{ getent_passwd|dict2items}}"
       delegate_to: localhost
 
+##----Begin system info block
     - name: Write system data header
       lineinfile:
         path: "{{passport_filename}}"
@@ -68,6 +84,7 @@
         - "Storage devices:"
       delegate_to: localhost
 
+##----Begin storage block
     - name: Write block devices data
       lineinfile:
         path: "{{passport_filename}}"
@@ -88,6 +105,7 @@
       with_items: "{{ ansible_mounts }}"
       delegate_to: localhost
 
+##----Begin network interfaces block
     - name: Write network config
       lineinfile:
         path: "{{passport_filename}}"
@@ -98,7 +116,7 @@
         - 'Default network interface:'
         - '{{ansible_default_ipv4|to_nice_yaml}}'
         - 'All configured ipv4 addresses:"{{ansible_all_ipv4_addresses}}" All configured ipv6 addresses:"{{ansible_all_ipv6_addresses}}"'
-        - 'All network interfaces information:'
+        - 'Network interfaces information:'
       delegate_to: localhost
 
 #   Метод по умолчанию, дает много информации, но может сломаться от экзотических настроек, например от интерфейсов докера.
@@ -109,16 +127,33 @@
       delegate_to: localhost
       register: ifresult
 
-#   Обходной метод собирает только имена интерфейсов, запускается только если основной не прошел.
+#   Топроный метод через вызов 'ip a'
+    - name: Get interface information via 'ip a'
+      shell:
+        cmd: 'ip --brief a'
+      register: ifresult
+      when: ifresult is not defined or "failed" in ifresult or "exception" in ifresult
+
+    - name: Write ouput of 'ip a' (only if success)
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - 'All network interfaces:'
+        - '{{ifresult.stdout}}'
+      when: ifresult is defined
+
+#   Собирает только имена интерфейсов, на всякий случай, для проверки корректности методов выше.
     - name: Write other network configuration headers
       lineinfile:
         path: "{{passport_filename}}"
         line: "{{item}}"
       with_items:
-        - 'Active network interfaces: {{ansible_interfaces|list}}'
+        - 'All registered network iterfaces names: {{ansible_interfaces|list}}'
       delegate_to: localhost
       when: ifresult is not defined or "failed" in ifresult or "exception" in ifresult
 
+#----Begin network configuration block
     - name: Write opened network posts header
       lineinfile:
         path: "{{passport_filename}}"
@@ -138,6 +173,59 @@
       with_items: "{{nsout.stdout}}"
       delegate_to: localhost
 
+##----Begin firewall block
+    - name: Get firewalld configuration
+      shell:
+        cmd: "firewall-cmd --list-all"
+      register: fwdstatus
+      when: "'firewalld' in srvfacts|string or 'firewalld.service' in srvfacts|string"
+
+    - name: Write firewalld config
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "Firewalld configuration:"
+        - "{{fwdstatus.stdout}}"
+        - "{{fwdstatus.stderr}}"
+      delegate_to: localhost
+      when: fwdstatus is defined
+
+    - name: Get iptables configuration
+      shell:
+        cmd: "iptables -L -n"
+      register: iptstatus
+      when: "'iptables' in srvfacts|string or 'iptables.service' in srvfacts|string"
+
+    - name: Write iptables config
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "Iptables configuration:"
+        - "{{iptstatus.stdout}}"
+        - "{{iptstatus.stderr}}"
+      delegate_to: localhost
+      when: iptstatus is defined
+
+    - name: Get ufw configuration
+      shell:
+        cmd: "ufw status numbered"
+      register: ufwstatus
+      when: "'ufw' in srvfacts|string or 'ufw.service' in srvfacts|string"
+
+    - name: Write ufw config
+      lineinfile:
+        path: "{{passport_filename}}"
+        line: "{{item}}"
+      with_items:
+        - "Ufw configuration:"
+        - "{{ufwstatus.stdout}}"
+        - "{{ufwstatus.stderr}}"
+      delegate_to: localhost
+      when: ufwstatus is defined
+
+##----Begin software block
     - name: Write software header
       lineinfile:
         path: "{{passport_filename}}"
@@ -149,15 +237,10 @@
         - "#######"
       delegate_to: localhost
 
-#   Это не работает на некоторых убунтах. Баг service_facts.
-    - name: Get services
-      ansible.builtin.service_facts:
-
-#   Если Get services не сработало, этот плей тоже пропустит с ошибкой.
     - name: Write services
       lineinfile:
         path: "{{passport_filename}}"
-        line: "{{ ansible_facts.services|to_nice_yaml }}"
+        line: "{{ srvfacts|to_nice_yaml|default( 'Unavaliable' ) }}"
       delegate_to: localhost
 
     - name: Write package list header
@@ -171,7 +254,7 @@
       delegate_to: localhost
 
     - name: Get packages
-      ansible.builtin.package_facts:
+      package_facts:
         manager: auto
 
     - name: Write packages
@@ -180,6 +263,7 @@
         line: "{{ansible_facts.packages|list}}"
       delegate_to: localhost
 
+##----Begin checksums and stuff block
     - name: Last section header
       lineinfile:
         path: "{{passport_filename}}"
@@ -212,21 +296,21 @@
         - "{{dirsums.results}}"
       delegate_to: localhost
 
-    - name: Read selinux config
+    - name: Read selinux config (RedHad OS family ONLY)
       shell:
         cmd: cat /etc/sysconfig/selinux| grep '^SELINUX='
       become: yes
       register: selinux_status
+      when: ansible_os_family|lower == 'redhat'
 
-    - name: Write selinux policy
+    - name: Write selinux policy either "Unavaliable"
       lineinfile:
         path: "{{passport_filename}}"
         line: "{{item}}"
       with_items:
         - "          "
-        - "SELINUX Policy: {{selinux_status.stdout}}"
+        - "SELINUX Policy: {{selinux_status.stdout|default('Unavaliable') }}"
       delegate_to: localhost
-      when: selinux_status is defined
 
 
     - name: Write EOF
