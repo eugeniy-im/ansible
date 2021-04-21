@@ -28,10 +28,6 @@
       register: srvfacts
       when: ansible_distribution|lower != 'ubuntu'
 
-#    - name: debug this fuck
-#      debug:
-#        msg: "{{srvfacts}}"
-
 ##----Begin of preparing files block
     - name: Delete old passport files
       file:
@@ -163,7 +159,6 @@
     - name: Shell command to get opened ports
       shell:
         cmd: netstat -tunlp
-      become: yes
       register: nsout
 
     - name: Write netstat out
